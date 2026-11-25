@@ -72,7 +72,9 @@ npm run serve     # then open http://localhost:8080
 See [AGENTS.md](AGENTS.md) for the layout of the code and the working rules
 (red/green TDD, self-review after every change).
 
-## Third-party code
+## Licence
 
-[three.js](https://threejs.org/) r187 in `vendor/three/`, unmodified, MIT
-licensed by its authors (see `vendor/three/LICENSE`).
+MIT, see [LICENSE](LICENSE).
+
+Third-party code: [three.js](https://threejs.org/) r187 in `vendor/three/`,
+unmodified, MIT licensed by its authors (see `vendor/three/LICENSE`).
