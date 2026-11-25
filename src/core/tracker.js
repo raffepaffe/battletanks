@@ -143,6 +143,15 @@ export class Tracker {
       }
     });
 
+    // A scout counted the intact tanks in its area; later reports must fit that count.
+    for (const scout of this.scouts) {
+      const area = areaCells(scout.center);
+      const found = scout.found + hits.filter((c) => area.includes(c)).length;
+      if (found > scout.count) fail('more hits in a scouted area than the scout counted');
+      const stillFresh = area.filter((c) => this.isFresh(c) && !hits.includes(c) && !misses.includes(c)).length;
+      if (scout.count - found > stillFresh) fail('no room left for the tanks a scout counted');
+    }
+
     const seen = new Set();
     const sunk = result.sunk.map((s) => {
       if (!s || !isUnitId(s.id) || this.isSunk(s.id) || seen.has(s.id)) fail('bad destroyed unit');

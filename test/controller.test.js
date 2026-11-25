@@ -109,3 +109,31 @@ test('closing the opponent stops the computer from moving', async () => {
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(events.some((e) => e.type === 'theirAction'), false);
 });
+
+test('an error in the screen\'s own event handler does not break the game', async () => {
+  const opponent = new ComputerOpponent({ seed: 5, level: 'easy', rng: createRng(1), delay: noDelay });
+  const board = new Board(opponent.terrain);
+  board.placeRandom(createRng(2));
+  const problems = [];
+  const game = new GameController({
+    opponent, board,
+    onEvent: (e) => { if (e.type === 'theirAction') throw new Error('drawing failed'); },
+    onError: (error) => problems.push(error.message),
+  });
+  await game.begin();
+  await game.fire(chooseAction(game.duel.tracker, createRng(1), 'easy'));
+  await myTurn(game);
+  assert.equal(game.turn, 'me', 'the enemy move was still recorded and answered');
+  assert.deepEqual(problems, ['drawing failed']);
+});
+
+test('if the computer opponent fails to move, a fault is reported instead of silence', async () => {
+  const { opponent, game, events } = setup();
+  await game.begin();
+  opponent.duel.beginAction = () => { throw new Error('no move found'); };
+  await game.fire(chooseAction(game.duel.tracker, createRng(1), 'easy'));
+  await new Promise((r) => setTimeout(r, 20));
+  const fault = events.find((e) => e.type === 'fault');
+  assert.ok(fault, 'a fault event is emitted');
+  assert.match(fault.error.message, /no move found/);
+});

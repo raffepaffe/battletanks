@@ -64,6 +64,9 @@ export class BattleScene {
     this._snapCamera = true;
 
     this._buildWorld();
+    /** Everything in flight (shells, aircraft, blasts), so it can be swept away at once. */
+    this._fx = new THREE.Group();
+    this.scene.add(this._fx);
     this.boards = { mine: this._buildBoard('mine'), enemy: this._buildBoard('enemy') };
     this._highlights = { select: this._highlightPool(), hover: this._highlightPool(), area: this._highlightPool() };
     this.setTerrain(new Uint8Array(CELLS));
@@ -206,6 +209,7 @@ export class BattleScene {
   /** Lay out rocks and lakes on both fields and remove everything from the last battle. */
   setTerrain(terrain) {
     this.terrain = terrain;
+    this._cancelAnimations();
     for (const board of Object.values(this.boards)) {
       board.props.clear();
       board.marks.clear();
@@ -347,11 +351,26 @@ export class BattleScene {
 
   // --- animated events -------------------------------------------------------------------
 
+  /** Run `step(t)` for t from 0 to 1. Resolves true when it finished, false if it was cancelled. */
   _tween(seconds, step) {
     return new Promise((resolve) => {
       this._tweens.push({ t: 0, seconds, step, resolve });
       step(0);
     });
+  }
+
+  /** Stop every running animation and remove what was in flight. */
+  _cancelAnimations() {
+    const running = this._tweens;
+    this._tweens = [];
+    for (const child of [...this._fx.children]) {
+      child.traverse((node) => {
+        node.geometry?.dispose();
+        node.material?.dispose();
+      });
+    }
+    this._fx.clear();
+    for (const tween of running) tween.resolve(false);
   }
 
   wait(seconds) {
@@ -364,12 +383,12 @@ export class BattleScene {
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false }),
     );
     ball.position.copy(position);
-    this.scene.add(ball);
+    this._fx.add(ball);
     return this._tween(seconds, (t) => {
       ball.scale.setScalar(0.15 + size * easeInOut(t));
       ball.material.opacity = 1 - t;
       if (t === 1) {
-        this.scene.remove(ball);
+        this._fx.remove(ball);
         ball.geometry.dispose();
         ball.material.dispose();
       }
@@ -381,7 +400,7 @@ export class BattleScene {
       const bit = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), new THREE.MeshBasicMaterial({ color: 0x2a2520 }));
       const angle = (i / 6) * Math.PI * 2 + position.x;
       bit.userData.dir = new THREE.Vector3(Math.cos(angle) * 0.9, 1.6 + (i % 3) * 0.4, Math.sin(angle) * 0.9);
-      this.scene.add(bit);
+      this._fx.add(bit);
       return bit;
     });
     return this._tween(0.7, (t) => {
@@ -389,7 +408,7 @@ export class BattleScene {
         bit.position.copy(position).addScaledVector(bit.userData.dir, t);
         bit.position.y -= 2.6 * t * t;
         bit.rotation.x = bit.rotation.z = t * 6;
-        if (t === 1) { this.scene.remove(bit); bit.geometry.dispose(); bit.material.dispose(); }
+        if (t === 1) { this._fx.remove(bit); bit.geometry.dispose(); bit.material.dispose(); }
       }
     });
   }
@@ -413,13 +432,14 @@ export class BattleScene {
     const target = this.cellPosition(side, cell, TOP + 0.1);
     const from = target.clone().add(new THREE.Vector3(side === 'enemy' ? -11 : 11, 0.5, 1.5));
     const shell = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0x1b1b1b }));
-    this.scene.add(shell);
+    this._fx.add(shell);
     this.sfx?.fire();
-    await this._tween(0.6, (t) => {
+    const arrived = await this._tween(0.6, (t) => {
       shell.position.lerpVectors(from, target, t);
       shell.position.y += Math.sin(Math.PI * t) * 4.2;
     });
-    this.scene.remove(shell);
+    if (!arrived) return;
+    this._fx.remove(shell);
     shell.geometry.dispose();
     shell.material.dispose();
     await this._land(side, cell, outcome);
@@ -434,11 +454,11 @@ export class BattleScene {
     const to = centre.clone().addScaledVector(direction, 13).setY(2.6);
     const plane = buildPlane();
     plane.rotation.y = orient === H ? 0 : -Math.PI / 2;
-    this.scene.add(plane);
+    this._fx.add(plane);
     this.sfx?.plane();
     const dropped = new Set();
     const landings = [];
-    await this._tween(1.7, (t) => {
+    const passed = await this._tween(1.7, (t) => {
       plane.position.lerpVectors(from, to, t);
       plane.rotation.x = Math.sin(t * 20) * 0.03;
       for (const entry of cells) {
@@ -449,7 +469,8 @@ export class BattleScene {
         }
       }
     });
-    this.scene.remove(plane);
+    if (!passed) return;
+    this._fx.remove(plane);
     await Promise.all(landings);
   }
 
@@ -460,17 +481,18 @@ export class BattleScene {
     const from = middle.clone().add(new THREE.Vector3(side === 'enemy' ? -9 : 9, 3, -5));
     const drone = buildDrone();
     drone.scale.setScalar(1.5);
-    this.scene.add(drone);
+    this._fx.add(drone);
     this.setHighlight('area', side, cells, 'area');
     this.sfx?.drone();
     const onCircle = (angle) => middle.clone().add(new THREE.Vector3(Math.cos(angle) * 1.25, 0, Math.sin(angle) * 1.25));
-    await this._tween(2.2, (t) => {
+    const returned = await this._tween(2.2, (t) => {
       if (t < 0.25) drone.position.lerpVectors(from, onCircle(0), easeInOut(t / 0.25));
       else if (t < 0.8) drone.position.copy(onCircle(((t - 0.25) / 0.55) * Math.PI * 2));
       else drone.position.lerpVectors(onCircle(0), from, easeInOut((t - 0.8) / 0.2));
       drone.rotation.y = t * 9;
     });
-    this.scene.remove(drone);
+    if (!returned) return;
+    this._fx.remove(drone);
     this.setHighlight('area', null, []);
     this._scoutReport(side, cells, count);
   }
@@ -600,8 +622,10 @@ export class BattleScene {
       tween.t = Math.min(1, tween.t + (dt * this.timeScale) / tween.seconds);
       tween.step(tween.t);
       if (tween.t === 1) {
-        this._tweens.splice(this._tweens.indexOf(tween), 1);
-        tween.resolve();
+        const at = this._tweens.indexOf(tween);
+        if (at === -1) continue;          // cancelled by its own step
+        this._tweens.splice(at, 1);
+        tween.resolve(true);
       }
     }
 

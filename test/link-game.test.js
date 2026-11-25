@@ -13,7 +13,8 @@ import { FakeClock, createLink } from './helpers/fake-link.js';
 async function twoDevices({ lossRate = 0, seed = 1 } = {}) {
   const clock = new FakeClock();
   const lossRng = createRng(seed * 7);
-  const link = createLink(clock, { lose: () => lossRng.next() < lossRate });
+  const rules = { lose: null };
+  const link = createLink(clock, { lose: (frame) => (rules.lose ? rules.lose(frame) : lossRng.next() < lossRate) });
   const sides = ['a', 'b'].map((name, i) => {
     const random = createRng(seed * 100 + i);
     const session = new Session({ transport: link[name], timers: clock.timers, random: random.next });
@@ -30,7 +31,7 @@ async function twoDevices({ lossRate = 0, seed = 1 } = {}) {
     side.board.placeRandom(side.random);
     side.game = new GameController({ opponent: side.opponent, board: side.board, onEvent: (e) => side.events.push(e) });
   }
-  return { clock, link, sides };
+  return { clock, link, sides, rules };
 }
 
 async function playToTheEnd({ clock, sides }) {
@@ -121,11 +122,34 @@ test('closing the link ends a waiting move with an error instead of hanging', as
   for (const side of sides) side.game.begin().then(() => { begun++; });
   await clock.until(() => begun === 2);
   const side = sides.find((s) => s.game.turn === 'me');
-  const other = sides.find((s) => s !== side);
-  other.opponent.close();
-  const move = side.game.fire(chooseAction(side.game.duel.tracker, createRng(1), 'easy'));
+  ctx.rules.lose = () => true;   // the other device has gone quiet
+  const outcome = side.game.fire(chooseAction(side.game.duel.tracker, createRng(1), 'easy')).then(() => null, (e) => e);
   await clock.advance(4000);
   side.opponent.close();
-  await assert.rejects(move, /closed/);
+  assert.match((await outcome).message, /closed/);
   assert.ok(side.events.some((e) => e.type === 'fault'));
+});
+
+test('the fleets are compared even if the confirmation of our own reveal never arrives', async () => {
+  const ctx = await twoDevices({ seed: 12 });
+  await playToTheEnd(ctx);
+  ctx.rules.lose = (frame) => frame.bytes[0] >> 4 === 4;   // every ACK vanishes from now on
+  const reveals = await finishBoth(ctx);
+  assert.equal(reveals[0].verdict.ok, true, reveals[0].verdict.reason);
+  assert.equal(reveals[1].verdict.ok, true, reveals[1].verdict.reason);
+});
+
+test('when one player leaves, the other player\'s waiting move ends with "left"', async () => {
+  const ctx = await twoDevices({ seed: 13 });
+  const { clock, sides } = ctx;
+  let begun = 0;
+  for (const side of sides) side.game.begin().then(() => { begun++; });
+  await clock.until(() => begun === 2);
+  const mover = sides.find((s) => s.game.turn === 'me');
+  const leaver = sides.find((s) => s !== mover);
+  const outcome = mover.game.fire(chooseAction(mover.game.duel.tracker, createRng(1), 'easy')).then(() => null, (e) => e);
+  leaver.opponent.close();
+  await clock.advance(5000);
+  assert.match((await outcome).message, /left/);
+  assert.equal(mover.session.state, 'closed');
 });

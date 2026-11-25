@@ -10,6 +10,7 @@ const SLOW_AFTER = 6;           // after this many tries, back off
 const MAX_WAIT_MS = 8000;
 const ACK_BYTES = 4;
 const RESULT_BYTES = 8;         // a typical report: three bytes plus one destroyed unit
+const FAREWELL_REPEATS_MS = [900, 1800];
 
 /** The check key two paired devices share, derived from the pairing nonce. */
 export function sessionKey(nonce) {
@@ -30,7 +31,7 @@ export function sessionKey(nonce) {
  * the chirp had to be sent.
  *
  * transport: { send(bytes, band), airtime(byteLength) -> seconds, onFrame }
- * Events: state, paired, version, trouble, recovered, fault.
+ * Events: state, paired, version, trouble, recovered, fault, left.
  */
 export class Session {
   constructor({ transport, timers = globalThis, random = Math.random, onEvent = () => {}, proto = PROTO }) {
@@ -77,12 +78,26 @@ export class Session {
     this._hello();
   }
 
+  /**
+   * Leave. If the devices are paired, say goodbye first so the other player is
+   * not left waiting: three short chirps spread over two seconds, because the
+   * other device cannot hear while it is sending itself.
+   */
   close() {
     if (this.state === 'closed') return;
+    if (this.state === 'paired') {
+      const bye = encodeFrame(M.BYE, new Uint8Array(0), this._key);
+      const band = this.role, transport = this.transport;
+      transport.send(bye, band);
+      for (const delay of FAREWELL_REPEATS_MS) this._timers.setTimeout(() => transport.send(bye, band), delay);
+    }
+    this._shutdown(new Error('the link was closed'));
+  }
+
+  _shutdown(error) {
     this._clearHello();
     for (const id of this._replyTimers) this._timers.clearTimeout(id);
     this._replyTimers.clear();
-    const error = new Error('the link was closed');
     for (const entry of this._pending.values()) {
       this._timers.clearTimeout(entry.timer);
       entry.reject(error);
@@ -145,7 +160,10 @@ export class Session {
       this._clearHello();
       this._welcome = encodeFrame(M.WELCOME, M.encodeWelcome({ nonce: hello.nonce, proto: this._proto }));
       this._reply(this._welcome, 1);
-      if (hello.proto !== this._proto) return this._mismatch(hello.proto);
+      if (hello.proto !== this._proto) {
+        this._mismatchNonce = hello.nonce;
+        return this._mismatch(hello.proto);
+      }
       this._pair(1, hello.nonce);
     } else if (frame.type === M.WELCOME && band === 1 && this.state === 'calling') {
       const welcome = M.decodeWelcome(frame.payload);
@@ -178,6 +196,14 @@ export class Session {
       if (frame) this._onPairingFrame(frame, band);
       return;
     }
+    if (this.state === 'mismatch') {
+      // The caller keeps calling until it has heard our WELCOME, which tells it about the mismatch.
+      const hello = this._welcome && band === 0 ? decodeFrame(bytes, DEFAULT_KEY) : null;
+      if (hello && hello.type === M.HELLO && M.decodeHello(hello.payload)?.nonce === this._mismatchNonce) {
+        this._reply(this._welcome, 1);
+      }
+      return;
+    }
     if (this.state !== 'paired' || band !== 1 - this.role) return;
 
     const frame = decodeFrame(bytes, this._key);
@@ -195,6 +221,7 @@ export class Session {
       case M.ACTION: return this._onActionFrame(frame.payload);
       case M.RESULT: return this._onResult(frame.payload);
       case M.REVEAL: return this._onReveal(frame.payload);
+      case M.BYE: return frame.payload.length === 0 ? this._onBye() : undefined;
       default: return undefined;
     }
   }
@@ -211,6 +238,11 @@ export class Session {
     if (!reveal) return;
     this._reveal.resolve(reveal);
     this._reply(encodeFrame(M.ACK, M.encodeAck(M.REVEAL), this._key));
+  }
+
+  _onBye() {
+    this._shutdown(new Error('the other player left'));
+    this.onEvent({ type: 'left' });
   }
 
   _onAck(payload) {

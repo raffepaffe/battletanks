@@ -80,7 +80,7 @@ class App {
     }
     click('btn-menu', () => {
       if (this.phase === 'menu') this.showModal('menu');
-      else if (this.phase === 'over') this.showModal('over');
+      else if (this.phase === 'over' && this.overReady) this.showModal('over');
       else this.showModal('leave');
     });
     click('btn-leave', () => this.toMenu());
@@ -118,8 +118,8 @@ class App {
     });
     click('btn-view', () => { this.scene.setView(this.scene.view === 'enemy' ? 'mine' : 'enemy'); this.refresh(); });
     $('btn-fire').addEventListener('click', () => {
-      if (this.phase === 'over') this.showModal('over');
-      else this.fire();
+      if (this.phase !== 'over') this.fire();
+      else if (this.overReady) this.showModal('over');
     });
 
     click('btn-mic', () => this.enableLink());
@@ -177,6 +177,7 @@ class App {
     this.strikeOrient = H;
     this.pendingFire = false;
     this.peerReady = false;
+    this.overReady = false;
     this.say('');
   }
 
@@ -228,12 +229,12 @@ class App {
     if (!this.board.isComplete() || this.phase !== 'placement') return;
     this.phase = 'waiting';
     this.scene.setHighlight('hover', null, []);
-    this.game = new GameController({
+    const game = new GameController({
       opponent: this.opponent,
       board: this.board,
-      onEvent: (event) => this.onGameEvent(event),
+      onEvent: (event) => { if (game === this.game) this.onGameEvent(event); },
     });
-    const game = this.game;
+    this.game = game;
     game.begin().catch((error) => { if (game === this.game) this.fail(error); });
     this.refresh();
   }
@@ -347,8 +348,8 @@ class App {
     this.refresh();
     try {
       await game.fire(action);
-    } catch (error) {
-      if (game === this.game) this.fail(error);
+    } catch {
+      // The controller has already reported it as a "fault" event; see onGameEvent.
     } finally {
       if (game === this.game) {
         this.pendingFire = false;
@@ -373,19 +374,22 @@ class App {
         break;
       case 'theirAction':
         this.enqueue(async () => {
+          const game = this.game;
           if (!this.scene.dual && this.scene.view !== 'mine') {
             this.scene.setView('mine');
             await this.scene.wait(0.55);
           }
           await this.animate('mine', event.action, event.result);
-          if (!this.game.over) {
-            await this.scene.wait(0.5);
-            this.scene.setView('enemy');
-          }
+          if (game !== this.game || game.over) return;
+          await this.scene.wait(0.5);
+          if (game === this.game) this.scene.setView('enemy');
         });
         break;
       case 'over':
         this.enqueue(() => this.endGame(event.winner));
+        break;
+      case 'fault':
+        this.fail(event.error);
         break;
       default:
         break;
@@ -393,24 +397,32 @@ class App {
   }
 
   async animate(side, action, result) {
+    // Leaving the game cancels the scene's animations; each step below then stops too.
+    const game = this.game;
+    const left = () => game !== this.game;
+    if (left()) return;
     const who = side === 'enemy' ? 'You' : 'Enemy';
     if (action.kind === SCOUT) {
       this.say(`${who === 'You' ? 'Your' : 'Enemy'} scout drone over ${cellName(action.cell)}…`);
       await this.scene.scout(side, action.cell, result.count);
+      if (left()) return;
       this.say(side === 'enemy'
         ? `Scout report: ${result.count} intact tank${result.count === 1 ? '' : 's'} around ${cellName(action.cell)}.`
         : `The enemy scouted around ${cellName(action.cell)}.`);
     } else if (action.kind === SHELL) {
       const hit = result.cells[0].outcome === HIT;
       await this.scene.shell(side, action.cell, result.cells[0].outcome);
+      if (left()) return;
       this.say(`${who} fired at ${cellName(action.cell)}: ${hit ? 'hit!' : 'miss.'}`);
     } else {
       this.say(`${who === 'You' ? 'Your' : 'Enemy'} air strike incoming…`);
       await this.scene.strike(side, result.cells, action.orient);
+      if (left()) return;
       const hits = result.cells.filter((c) => c.outcome === HIT).length;
       this.say(`${who === 'You' ? 'Your' : 'Enemy'} air strike: ${hits} hit${hits === 1 ? '' : 's'}.`);
     }
     for (const unit of result.sunk) {
+      if (left()) return;
       this.scene.showWreck(side, unit);
       this.say(side === 'enemy' ? `Enemy ${unitName(unit.id)} destroyed!` : `Your ${unitName(unit.id)} is destroyed.`);
       await this.scene.finale(side, unit);
@@ -424,6 +436,7 @@ class App {
     this.refresh();
     if (winner === 'me') this.sfx.win(); else this.sfx.lose();
     await this.scene.wait(0.9);
+    if (game !== this.game) return;
 
     let reveal = null;
     if (this.mode === 'link') this.say('Comparing battlefields with the other device…');
@@ -470,12 +483,13 @@ class App {
     }
     $('btn-again').textContent = this.mode === 'link' ? 'Connect again' : 'Play again';
     this.say(winner === 'me' ? 'You won the battle.' : 'You lost the battle.');
+    this.overReady = true;
     this.showModal('over');
   }
 
   fail(error) {
     console.error(error);
-    if (this.phase === 'menu' || /closed/.test(error?.message || '')) return;
+    if (this.phase === 'menu' || /closed|left/.test(error?.message || '')) return;
     const protocol = error instanceof ProtocolError;
     $('error-title').textContent = protocol ? 'The reports do not add up' : 'Something went wrong';
     $('error-text').textContent = protocol
@@ -506,6 +520,10 @@ class App {
 
   async enableLink() {
     const button = $('btn-mic');
+    // A token for this attempt: cancelling and reopening the lobby while the
+    // microphone prompt is open must not leave two transports running.
+    const attempt = Symbol('link attempt');
+    this.linkAttempt = attempt;
     button.disabled = true;
     $('lobby-status').textContent = this.useTabs ? 'Connecting…' : 'Asking for the microphone…';
     let echoCancellation = false;
@@ -517,13 +535,14 @@ class App {
       await transport.start();
     } catch (error) {
       transport.stop();
+      if (this.linkAttempt !== attempt) return;
       button.disabled = false;
       $('lobby-status').textContent = error?.name === 'NotAllowedError'
         ? 'The microphone was not allowed. Allow it in the browser and try again.'
         : `The microphone could not be started (${error?.message || error}).`;
       return;
     }
-    if (this.phase !== 'lobby') { transport.stop(); return; }
+    if (this.linkAttempt !== attempt || this.phase !== 'lobby') { transport.stop(); return; }
 
     this.transport = transport;
     transport.onActivity = (activity) => this.onLinkActivity(activity);
@@ -555,6 +574,7 @@ class App {
 
   onLinkEvent(event) {
     if (event.type === 'paired') {
+      this.linkPaired = true;
       clearInterval(this.meterTimer);
       this.opponent = new LinkOpponent({ session: this.session });
       this.session.whenPeerReady.then(() => { this.peerReady = true; this.refresh(); }, () => {});
@@ -569,6 +589,14 @@ class App {
       $('banner').hidden = true;
     } else if (event.type === 'fault') {
       this.fail(new Error(event.message));
+    } else if (event.type === 'left') {
+      $('banner').hidden = true;
+      // After the battle it does not matter; before that, the game cannot go on.
+      if (this.phase === 'placement' || this.phase === 'waiting' || this.phase === 'battle') {
+        $('error-title').textContent = 'The other player left';
+        $('error-text').textContent = 'The other device ended the game.';
+        this.showModal('error');
+      }
     }
   }
 
@@ -590,8 +618,13 @@ class App {
 
   closeLink() {
     clearInterval(this.meterTimer);
+    this.linkAttempt = null;
+    const transport = this.transport;
     this.session?.close();
-    this.transport?.stop();
+    // A paired session says goodbye with a few chirps; give them time to be played.
+    if (transport && this.linkPaired) setTimeout(() => transport.stop(), 2800);
+    else transport?.stop();
+    this.linkPaired = false;
     this.session = null;
     this.transport = null;
     this.wakeLock?.release().catch(() => {});
@@ -712,7 +745,7 @@ class App {
     const fire = $('btn-fire');
     if (over) {
       fire.textContent = 'Results';
-      fire.disabled = false;
+      fire.disabled = !this.overReady;   // the results are still being put together
     } else {
       const ready = canInput && this.target && this.game.canFire(this.target);
       if (!ready) { this.target = null; this.targetCell = null; }

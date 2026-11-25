@@ -33,6 +33,16 @@ class BattleTanksCapture extends AudioWorkletProcessor {
 registerProcessor('battletanks-capture', BattleTanksCapture);
 `;
 
+/** The worklet may be registered only once per AudioContext, however often a transport starts. */
+const captureLoaded = new WeakMap();
+function loadCapture(ctx) {
+  if (!captureLoaded.has(ctx)) {
+    const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'application/javascript' }));
+    captureLoaded.set(ctx, ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url)));
+  }
+  return captureLoaded.get(ctx);
+}
+
 const LISTEN_FIRST_MS = 1500;   // longest we hold a chirp back because someone else is talking
 const OWN_ECHO_MS = 700;        // a frame in our own band this soon after sending is our own echo
 
@@ -123,15 +133,12 @@ export class AudioTransport {
 
   async _createCapture(ctx) {
     if (ctx.audioWorklet && window.AudioWorkletNode) {
-      const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'application/javascript' }));
       try {
-        await ctx.audioWorklet.addModule(url);
+        await loadCapture(ctx);
         const node = new AudioWorkletNode(ctx, 'battletanks-capture');
         node.port.onmessage = (event) => this._demod?.push(event.data);
         return node;
-      } catch { /* fall through to the older API */ } finally {
-        URL.revokeObjectURL(url);
-      }
+      } catch { /* fall through to the older API */ }
     }
     const node = ctx.createScriptProcessor(1024, 1, 1);
     node.onaudioprocess = (event) => this._demod?.push(new Float32Array(event.inputBuffer.getChannelData(0)));

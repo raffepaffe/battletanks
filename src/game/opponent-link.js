@@ -36,10 +36,11 @@ export class LinkOpponent {
 
   /** Swap fleets after the battle. The fingerprint is the one they sent before it. */
   async reveal() {
-    const [, theirs] = await Promise.all([
-      this.session.sendReveal({ layout: this._layout, salt: this._salt }),
-      this.session.whenPeerReveal,
-    ]);
+    // Ours keeps being repeated in the background until it is confirmed or the link
+    // closes. Waiting for that confirmation here would hold up a check that only
+    // needs their fleet.
+    this.session.sendReveal({ layout: this._layout, salt: this._salt }).catch(() => {});
+    const theirs = await this.session.whenPeerReveal;
     return { layout: theirs.layout, salt: theirs.salt, commit: this._peerCommit };
   }
 

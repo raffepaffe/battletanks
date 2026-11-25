@@ -309,3 +309,47 @@ test('frames use the pre-pairing key for pairing and the session key afterwards'
   assert.equal(decodeFrame(ready.bytes, sessionKey(a.seed)).type, M.READY);
   a.close();
 });
+
+test('a version mismatch is still reported when the first welcome is lost', async () => {
+  const ctx = pair({ protoB: PROTO + 1, lose: loseFirst(M.WELCOME) });
+  ctx.a.listen();
+  ctx.b.listen();
+  ctx.b.call();
+  await ctx.clock.until(() => ctx.a.state === 'mismatch' && ctx.b.state === 'mismatch');
+  assert.ok(ctx.eventsB.some((e) => e.type === 'version'));
+});
+
+test('closing a paired session tells the other device, which stops waiting', async () => {
+  const { a, b, clock, eventsA, eventsB, link } = await paired();
+  const [first, second] = a.meFirst ? [a, b] : [b, a];
+  const waiting = first.sendAction({ kind: SHELL, cell: 1 });
+  second.close();
+  assert.ok(link.sent.some((f) => frameType(f) === M.BYE), 'a goodbye is sent');
+  await clock.advance(4000);
+  const events = first === a ? eventsA : eventsB;
+  assert.ok(events.some((e) => e.type === 'left'));
+  assert.equal(first.state, 'closed');
+  await assert.rejects(waiting, /left/);
+  await assert.rejects(first.whenPeerReveal, /left/);
+  await clock.advance(20000);
+  assert.equal(clock.pending, 0, 'nothing keeps chirping');
+  const others = second === a ? eventsA : eventsB;
+  assert.equal(others.some((e) => e.type === 'left'), false, 'the side that left is not told it left');
+});
+
+test('a session that never paired says no goodbye, and a stranger\'s goodbye is ignored', async () => {
+  const lonely = pair();
+  lonely.a.listen();
+  lonely.a.close();
+  assert.equal(lonely.link.sent.length, 0);
+
+  const { a, b, clock, link } = await paired({ halfDuplex: false });
+  const stranger = sessionKey(a.seed === 65535 ? 1 : a.seed + 1);
+  link.a.send(encodeFrame(M.BYE, new Uint8Array(0), stranger), a.role);
+  link.b.send(encodeFrame(M.BYE, new Uint8Array(0), stranger), b.role);
+  // Right key, but a goodbye carries no payload: this is something else.
+  link.a.send(encodeFrame(M.BYE, Uint8Array.of(1), sessionKey(a.seed)), a.role);
+  await clock.advance(3000);
+  assert.equal(a.state, 'paired');
+  assert.equal(b.state, 'paired');
+});

@@ -17,6 +17,7 @@ export class ComputerOpponent {
     this.meFirst = meFirst;
     this.level = level;
     this.onAction = null;
+    this.onFault = null;
     this._rng = rng;
     this._delay = delay;
     this._thinkMs = thinkMs;
@@ -30,13 +31,20 @@ export class ComputerOpponent {
     this._salt = Math.floor(this._rng.next() * 4294967296) >>> 0;
     this._commit = commitLayout(board.layout(), this._salt);
     this.duel = new Duel({ terrain: this.terrain, board, first: !this.meFirst });
-    if (!this.meFirst) void this._move();
+    if (!this.meFirst) this._startMove();
   }
 
   async resolve(action) {
     const result = this.duel.receiveAction(action);
-    if (!this.duel.over) void this._move();
+    if (!this.duel.over) this._startMove();
     return result;
+  }
+
+  _startMove() {
+    this._move().catch((error) => {
+      if (this.onFault) this.onFault(error);
+      else throw error;
+    });
   }
 
   async _move() {

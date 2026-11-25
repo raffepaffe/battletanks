@@ -13,16 +13,18 @@ import { RuleError } from '../core/errors.js';
  *   ready(board) -> Promise     resolves when both sides have placed their fleets
  *   resolve(action) -> Promise<result>
  *   reveal() -> Promise<{ layout, salt, commit }>   the enemy fleet, after the battle
+ *   onFault = (error) => {}         set by the controller; called if the opponent cannot go on
  *   close()
  *
  * Events: begin, fired {action}, myResult {action, result},
  *         theirAction {action, result}, over {winner}, fault {error}.
  */
 export class GameController {
-  constructor({ opponent, board, onEvent = () => {} }) {
+  constructor({ opponent, board, onEvent = () => {}, onError = (error) => console.error(error) }) {
     this.opponent = opponent;
     this.board = board;
     this.onEvent = onEvent;
+    this.onError = onError;
     this.duel = null;
     this._begun = false;
   }
@@ -36,6 +38,7 @@ export class GameController {
     this.duel = new Duel({ terrain: this.opponent.terrain, board: this.board, first: this.opponent.meFirst });
     // Listen before announcing readiness: the enemy's first action may arrive at once.
     this.opponent.onAction = (action) => this._incoming(action);
+    this.opponent.onFault = (error) => this._emit({ type: 'fault', error });
     await this.opponent.ready(this.board);
     this._markBegun();
   }
@@ -43,7 +46,20 @@ export class GameController {
   _markBegun() {
     if (this._begun) return;
     this._begun = true;
-    this.onEvent({ type: 'begin' });
+    this._emit({ type: 'begin' });
+  }
+
+  /**
+   * Tell the screen. A failure in the screen's own code must not look like a
+   * failure of the game: the board has already changed and the opponent is
+   * waiting for the report.
+   */
+  _emit(event) {
+    try {
+      this.onEvent(event);
+    } catch (error) {
+      this.onError(error);
+    }
   }
 
   canFire(action) {
@@ -53,17 +69,17 @@ export class GameController {
   async fire(action) {
     if (!this._begun) throw new RuleError('the battle has not started');
     const sent = this.duel.beginAction(action);
-    this.onEvent({ type: 'fired', action: sent });
+    this._emit({ type: 'fired', action: sent });
     let result;
     try {
       result = await this.opponent.resolve(sent);
       this.duel.completeAction(result);
     } catch (error) {
-      this.onEvent({ type: 'fault', error });
+      this._emit({ type: 'fault', error });
       throw error;
     }
-    this.onEvent({ type: 'myResult', action: sent, result });
-    if (this.duel.over) this.onEvent({ type: 'over', winner: this.duel.winner });
+    this._emit({ type: 'myResult', action: sent, result });
+    if (this.duel.over) this._emit({ type: 'over', winner: this.duel.winner });
     return result;
   }
 
@@ -71,8 +87,8 @@ export class GameController {
     const result = this.duel.receiveAction(action);
     // A legal enemy action can only arrive once they have seen our fleet is ready.
     this._markBegun();
-    this.onEvent({ type: 'theirAction', action, result });
-    if (this.duel.over) this.onEvent({ type: 'over', winner: this.duel.winner });
+    this._emit({ type: 'theirAction', action, result });
+    if (this.duel.over) this._emit({ type: 'over', winner: this.duel.winner });
     return result;
   }
 

@@ -141,7 +141,7 @@ test('ping carries a counter and a sender id', () => {
 });
 
 test('message type numbers are distinct and fit in four bits', () => {
-  const types = [M.HELLO, M.WELCOME, M.READY, M.ACK, M.ACTION, M.RESULT, M.REVEAL, M.PING];
+  const types = [M.HELLO, M.WELCOME, M.READY, M.ACK, M.ACTION, M.RESULT, M.REVEAL, M.PING, M.BYE];
   assert.equal(new Set(types).size, types.length);
   for (const t of types) assert.ok(t >= 1 && t <= 15);
 });

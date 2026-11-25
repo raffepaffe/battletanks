@@ -131,8 +131,9 @@ export class Demodulator {
   }
 
   _measure(end) {
-    this._load(end - this._win);
     for (let band = 0; band < this._bands.length; band++) {
+      // Reload for every band: decoding a frame in one band reuses the same buffers.
+      this._load(end - this._win);
       this._tonePowers(band);
       this._step(band, end);
     }

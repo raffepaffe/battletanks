@@ -15,6 +15,7 @@ export const ACTION = 5;   // turn(1) kind+orient(1) cell(1)
 export const RESULT = 6;   // turn(1) flags(1) outcomes-or-count(1) [unit(1) placement(1)]*
 export const REVEAL = 7;   // layout(5) salt(4)
 export const PING = 8;     // radio check: counter(1) sender(1)
+export const BYE = 9;      // this device is leaving the game: no payload
 
 const u16 = (hi, lo) => (hi << 8) | lo;
 

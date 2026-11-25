@@ -236,3 +236,27 @@ test('audit catches a changed layout, an impossible layout and a false report', 
   assert.equal(verdict.ok, false);
   assert.match(verdict.reason, /report/i);
 });
+
+test('tracker rejects more hits in a scouted area than the scout counted', () => {
+  const board = standardBoard(), t = new Tracker(openTerrain());
+  // Honest scout of the far corner: nothing there.
+  const scout = { kind: SCOUT, cell: cellAt(8, 5) };
+  t.apply(scout, { kind: SCOUT, cells: [], sunk: [], count: 1, over: false });
+  const strike = { kind: STRIKE, cell: cellAt(7, 5), orient: H };
+  assert.throws(() => t.apply(strike, {
+    kind: STRIKE, sunk: [], count: 0, over: false,
+    cells: [{ cell: cellAt(7, 5), outcome: HIT }, { cell: cellAt(8, 5), outcome: HIT }, { cell: cellAt(9, 5), outcome: HIT }],
+  }), ProtocolError);
+  assert.equal(t.strikeUsed, false);
+  assert.ok(board);
+});
+
+test('tracker rejects misses that leave no room for the tanks a scout counted', () => {
+  const t = new Tracker(openTerrain());
+  // The corner area has four cells; the scout says three of them hold intact tanks.
+  t.apply({ kind: SCOUT, cell: 0 }, { kind: SCOUT, cells: [], sunk: [], count: 3, over: false });
+  const missAt = (cell) => ({ kind: SHELL, cells: [{ cell, outcome: MISS }], sunk: [], count: 0, over: false });
+  t.apply({ kind: SHELL, cell: 0 }, missAt(0));      // three cells left for three tanks: still possible
+  assert.throws(() => t.apply({ kind: SHELL, cell: 1 }, missAt(1)), ProtocolError);
+  assert.equal(t.state[1], UNKNOWN);
+});

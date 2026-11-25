@@ -224,3 +224,27 @@ test('signal level is reported per band', () => {
   assert.ok(demod.level(1) > 0.05, `band 1 level ${demod.level(1)}`);
   assert.ok(demod.level(0) < demod.level(1) / 10);
 });
+
+test('measuring one band is not disturbed by decoding a frame in the other band', () => {
+  const sampleRate = 48000, hop = 480;
+  const bytes = frame(7, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+  const chirp = modulate(bytes, { sampleRate, band: 0 });
+  const total = chirp.length + sampleRate;
+  // Band 1 carries a tone that gets louder quickly while the frame arrives, so a
+  // measurement taken from the wrong moment gives a visibly different level.
+  const f = toneFrequency(1, 5);
+  const loudness = (i) => Math.max(0, Math.min(0.6, (0.6 * (i - 4800)) / 24000));
+  const ramp = Float32Array.from({ length: total }, (_, i) => loudness(i) * Math.sin(2 * Math.PI * f * i / sampleRate));
+  const mixed = Float32Array.from(ramp);
+  for (let i = 0; i < chirp.length; i++) mixed[4800 + i] += chirp[i];
+
+  const alone = new Demodulator({ sampleRate, accept: () => false, onFrame: () => {} });
+  const busy = new Demodulator({ sampleRate, accept: (b) => decodeFrame(b) !== null, onFrame: () => {} });
+  let worst = 0;
+  for (let i = 0; i + hop <= total; i += hop) {
+    alone.push(ramp.subarray(i, i + hop));
+    busy.push(mixed.subarray(i, i + hop));
+    if (alone.level(1) > 0.15) worst = Math.max(worst, Math.abs(busy.level(1) - alone.level(1)) / alone.level(1));
+  }
+  assert.ok(worst < 0.02, `band 1 level was off by ${(worst * 100).toFixed(1)}% while band 0 was decoding`);
+});
