@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radio check · Battle Tanks</title>
+  <meta name="theme-color" content="#1d2218">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { overflow-y: auto; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+    h1 { font-family: var(--stencil); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0; font-size: 1.6rem; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+    .card h2 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+    .card p { margin: 0; }
+    .meters { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; font-size: 0.85rem; color: var(--muted); }
+    label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; }
+    label.check input { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--accent); }
+    #counts { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 0; }
+    #counts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    #counts dt { color: var(--muted); }
+    #log { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+    #log li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+    #log li.own { color: var(--muted); }
+    #log li.other { color: var(--good); }
+    #result { font-weight: 600; }
+    #result.good { color: var(--good); }
+    #result.bad { color: var(--danger); }
+    a { color: var(--link); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Radio check</h1>
+    <p>Check whether two devices can hear each other's chirps before you start a battle. Open this page on both devices, turn the microphone on, and send test chirps from each in turn.</p>
+
+    <section class="card">
+      <h2>1 · This device by itself</h2>
+      <p>Checks that this browser can produce and decode chirps at all. Makes no sound and needs no microphone.</p>
+      <div class="row"><button type="button" id="btn-self">Run the silent self-test</button></div>
+      <p id="result" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card">
+      <h2>2 · Through the air</h2>
+      <label class="check">
+        <input type="checkbox" id="echo">
+        <span>Echo cancellation. Leave this off first. Try it if the other device cannot hear this one: on some phones it moves the sound from the quiet earpiece to the loudspeaker.</span>
+      </label>
+      <div class="row">
+        <button type="button" id="btn-mic" class="primary">Turn on the microphone</button>
+        <button type="button" id="btn-send" disabled>Send a test chirp</button>
+        <button type="button" id="btn-auto" disabled>Send every 3 seconds</button>
+      </div>
+      <div class="row">
+        <button type="button" id="btn-band" disabled>Sending in the low band</button>
+      </div>
+      <p id="mic-status" role="status" aria-live="polite"></p>
+      <div class="meters">
+        <span>Low band</span><div class="meter"><i id="meter-0"></i></div>
+        <span>High band</span><div class="meter"><i id="meter-1"></i></div>
+      </div>
+      <dl id="counts">
+        <dt>Chirps sent</dt><dd id="count-sent">0</dd>
+        <dt>Own chirps heard by this device</dt><dd id="count-own">0</dd>
+        <dt>Chirps received from another device</dt><dd id="count-other">0</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Received</h2>
+      <ul id="log"><li>Nothing yet.</li></ul>
+    </section>
+
+    <section class="card">
+      <h2>What to look for</h2>
+      <p>When the other device sends, a green line should appear here within about a second. If this device hears its own chirps but the other one does not, move the devices closer, raise the volume and switch off silent mode. Quality above 60% is comfortable.</p>
+      <p><a href="./">Back to Battle Tanks</a></p>
+    </section>
+  </main>
+  <script type="module" src="src/ui/radio.js"></script>
+</body>
+</html>

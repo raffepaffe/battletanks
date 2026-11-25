@@ -1,0 +1,212 @@
+:root {
+  --bg: #1d2218;
+  --panel: #2a3122;
+  --panel-2: #353e2b;
+  --line: #4a5540;
+  --text: #f1ecd8;
+  --muted: #b9b79f;
+  --accent: #e2b33c;
+  --accent-ink: #231c05;
+  --danger: #d9523f;
+  --good: #7fcf6a;
+  --link: #58d0ff;
+  --stencil: "Stencil", "Arial Black", Impact, "Helvetica Neue", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+/* The hidden attribute must win over any display rule below. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ---- top bar ---- */
+#top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+#status-box { flex: 1; min-width: 0; text-align: center; }
+#status {
+  font-family: var(--stencil);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#last {
+  min-height: 1.2em; font-size: 0.82rem; line-height: 1.2; color: var(--muted);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+#status.mine { color: var(--accent); }
+
+.icon-button {
+  width: 44px; height: 44px; padding: 0;
+  font-size: 1.3rem; line-height: 1;
+  background: transparent; border: 1px solid var(--line);
+}
+.icon-button.off { opacity: 0.45; text-decoration: line-through; }
+
+#link-light {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--line); border: 2px solid var(--bg);
+  transition: background 0.1s;
+}
+#link-light.tx { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+#link-light.rx { background: var(--link); box-shadow: 0 0 8px var(--link); }
+
+/* ---- fleet status ---- */
+#fleets { background: var(--panel); border-bottom: 1px solid var(--line); padding: 4px 8px; display: grid; gap: 3px; }
+.fleet { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fleet-label { width: 3.4em; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.chips { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.chip {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2px 3px; border-radius: 6px;
+  background: var(--panel-2); font-size: 0.72rem; line-height: 1.15;
+}
+.chip b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.chip .pips { display: flex; gap: 2px; margin-top: 2px; }
+.chip .pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+#fleet-enemy .chip .pips i { background: var(--muted); }
+.chip .pips i.hit { background: var(--danger); }
+.chip.gone { opacity: 0.55; }
+.chip.gone b { text-decoration: line-through; }
+#fleet-enemy .chip.gone .pips i { background: var(--danger); }
+
+/* ---- stage ---- */
+#stage { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; }
+#stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+#banner {
+  background: var(--danger); color: #fff; text-align: center;
+  padding: 6px 10px; font-size: 0.9rem;
+}
+
+/* ---- controls ---- */
+#controls { background: var(--panel); border-top: 1px solid var(--line); }
+#controls section { padding: 8px; display: grid; gap: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+#controls .row > * { flex: 1 1 0; }
+
+button, .button {
+  font: inherit; color: var(--text);
+  min-height: 44px; padding: 8px 12px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer; text-decoration: none; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  touch-action: manipulation;
+}
+button:hover:not(:disabled), .button:hover { border-color: var(--accent); }
+button:focus-visible, .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
+button.quiet, .button.quiet { background: transparent; }
+button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+button small { background: var(--bg); border-radius: 999px; padding: 0 7px; font-size: 0.75rem; }
+button.used { text-decoration: line-through; }
+
+#unit-buttons button { flex-direction: column; gap: 0; padding: 4px 4px; font-size: 0.82rem; line-height: 1.2; }
+#unit-buttons button span { font-size: 0.7rem; color: var(--muted); }
+#unit-buttons button.placed { opacity: 0.55; }
+#unit-buttons button.placed span { display: none; }
+#unit-buttons button.placed::after { content: "placed"; font-size: 0.7rem; color: var(--good); }
+#btn-fire { flex: 2 1 0 !important; font-family: var(--stencil); letter-spacing: 0.1em; text-transform: uppercase; font-size: 1.1rem; }
+
+/* ---- modals ---- */
+#overlay {
+  position: fixed; inset: 0; z-index: 10;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(15, 18, 12, 0.72);
+  overflow-y: auto;
+}
+#overlay[hidden] { display: none; }
+.modal {
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal[hidden] { display: none; }
+.modal h1 { font-family: var(--stencil); letter-spacing: 0.08em; text-transform: uppercase; font-size: 2.1rem; margin: 0 0 6px; color: var(--accent); text-align: center; }
+.modal h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 18px 0 8px; }
+.modal h2:first-child { margin-top: 0; font-size: 1.2rem; color: var(--text); letter-spacing: 0.04em; }
+.modal h3 { font-size: 1rem; margin: 14px 0 4px; }
+.modal .lead { text-align: center; margin: 0 0 8px; color: var(--muted); }
+.modal .row { margin-top: 10px; }
+.modal .row > * { flex: 1 1 auto; }
+.modal ul, .modal ol { padding-left: 1.2em; margin: 8px 0; }
+.modal li { margin-bottom: 6px; }
+.modal a { color: var(--link); }
+.fine { font-size: 0.8rem; color: var(--muted); text-align: center; margin: 14px 0 0; }
+
+#lobby-status { min-height: 1.4em; color: var(--accent); margin: 10px 0 0; }
+#lobby-meter { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+.meter { flex: 1; height: 8px; border-radius: 4px; background: var(--bg); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--link); transition: width 0.08s linear; }
+
+#over-stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 12px 0; }
+#over-stats dt { color: var(--muted); }
+#over-stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+#over-audit { font-size: 0.9rem; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
+#over-audit.bad { background: var(--danger); color: #fff; }
+
+/* ---- wide screens: both fields are visible, so the layout can breathe ---- */
+@media (min-width: 900px) {
+  #fleets { grid-template-columns: 1fr 1fr; gap: 16px; }
+  #fleet-enemy { order: 2; }
+  .chip { flex-direction: row; justify-content: center; gap: 6px; font-size: 0.8rem; }
+  .chip .pips { margin-top: 0; }
+  #controls section { max-width: 760px; margin: 0 auto; }
+  #status { font-size: 1.15rem; }
+}
+
+/* ---- low screens (a phone held sideways): one row of everything ---- */
+@media (max-height: 520px) {
+  #top { padding: 2px 8px; }
+  .icon-button { height: 34px; }
+  #last { display: none; }
+  #fleets { grid-template-columns: 1fr 1fr; gap: 12px; padding: 2px 8px; }
+  #fleet-enemy { order: 2; }
+  .chip { flex-direction: row; justify-content: center; gap: 3px; font-size: 0.64rem; padding: 2px 1px; }
+  .chip .pips { margin-top: 0; gap: 1px; }
+  .chip .pips i { width: 5px; height: 5px; }
+  .fleet-label { width: auto; }
+  #controls section { display: flex; padding: 4px 8px; gap: 6px; max-width: none; }
+  #controls section > .row { flex: 1 1 0; flex-wrap: nowrap; gap: 6px; }
+  button, .button { min-height: 36px; padding: 4px 8px; }
+  #unit-buttons button { font-size: 0.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
